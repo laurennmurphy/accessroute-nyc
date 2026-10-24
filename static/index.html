@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AccessRoute NYC</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>AccessRoute <span>NYC</span></h1>
+    <p>Check live elevator &amp; escalator outages before you ride.</p>
+  </header>
+
+  <main>
+    <!-- Trip form: stations use <datalist> autocomplete filled by app.js -->
+    <form id="trip-form" autocomplete="off">
+      <label for="start">From
+        <input id="start" list="station-list" placeholder="Start typing a station…" required>
+      </label>
+      <label for="end">To
+        <input id="end" list="station-list" placeholder="Start typing a station…" required>
+      </label>
+      <datalist id="station-list"></datalist>
+
+      <fieldset>
+        <legend>My accessibility need</legend>
+        <label class="radio"><input type="radio" name="need" value="elevator_only" checked> Elevator only</label>
+        <label class="radio"><input type="radio" name="need" value="elevator_or_escalator"> Elevator or escalator</label>
+      </fieldset>
+
+      <button type="submit" id="go">Check my route</button>
+    </form>
+
+    <p id="error" role="alert" hidden></p>
+
+    <!-- Results appear here -->
+    <section id="result" hidden aria-live="polite">
+      <div id="verdict" class="verdict"></div>
+
+      <div class="chat" id="chat"></div>
+      <form id="chat-form">
+        <input id="chat-input" placeholder="Ask a follow-up (e.g. “Is there a bus alternative?”)" maxlength="500">
+        <button type="submit">Ask</button>
+      </form>
+
+      <h2 id="route-title"></h2>
+      <ol id="legs"></ol>
+      <h3>Stations you’ll need equipment at</h3>
+      <ul id="checks"></ul>
+      <p id="footnote" class="muted"></p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
