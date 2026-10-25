@@ -49,7 +49,7 @@ def route():
         outages = mta_feed.fetch_outages()   # live data
     except Exception as exc:                 # network error or malformed XML
         app.logger.warning("MTA feed failed: %s", exc)
-        return jsonify(error="Couldn't reach the MTA outage feed. Please try again in a minute."), 502
+        return jsonify(error="Couldn't get the latest elevator and escalator status from the MTA. Please try again in a minute."), 502
 
     plan = planner.plan_trip(graph, start, end, need, outages, mta_feed.fetch_ada_station_names())
     # Optional Tavily lookup, only when the fastest route isn't simply usable.
