@@ -1,0 +1,169 @@
+"""Offline tests: the MTA feed is replaced with a sample XML document."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import pytest  # noqa: E402
+
+import app as app_module  # noqa: E402
+from accessroute import ai_client, mta_feed  # noqa: E402
+
+# Elevator out at Times Sq (all lines) + an escalator out at 14 St-Union Sq.
+SAMPLE_XML = b"""<NYCOutages>
+  <outage><station>Times Sq-42 St</station><trainno>1/2/3/7/N/Q/R/W</trainno>
+    <equipment>EL1</equipment><equipmenttype>EL</equipmenttype><serving>Street to mezzanine</serving>
+    <ADA>Y</ADA><estimatedreturntoservice>10/30/2026</estimatedreturntoservice><reason>Repair</reason>
+    <isupcomingoutage>N</isupcomingoutage></outage>
+  <outage><station>14 St-Union Sq</station><trainno>4/5/6/L/N/Q/R/W</trainno>
+    <equipment>ES2</equipment><equipmenttype>ES</equipmenttype><serving>Mezzanine</serving>
+    <ADA>N</ADA><isupcomingoutage>N</isupcomingoutage></outage>
+  <outage><station>Grand Central-42 St</station><trainno>4/5/6/7/S</trainno>
+    <equipment>EL3</equipment><equipmenttype>EL</equipmenttype><ADA>Y</ADA>
+    <isupcomingoutage>Y</isupcomingoutage></outage>
+</NYCOutages>"""
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr(mta_feed, "fetch_outages",
+                        lambda: mta_feed.parse_records(SAMPLE_XML, "outage"))
+    monkeypatch.setattr(mta_feed, "fetch_ada_station_names", lambda: None)
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    return app_module.app.test_client()
+
+
+def station_id(name, route):
+    g = app_module.graph
+    return next(s for s, v in g.stations.items() if v["name"] == name and route in v["routes"])
+
+
+def test_parse_records():
+    recs = mta_feed.parse_records(SAMPLE_XML, "outage")
+    assert len(recs) == 3 and recs[0]["equipmenttype"] == "EL" and recs[0]["ada"] == "Y"
+
+
+def test_name_matching_uses_train_list():
+    g = app_module.graph
+    ids = g.match_station_ids("Times Sq-42 St", "1/2/3/7/N/Q/R/W")
+    assert ids and all("Times Sq" in g.name(i) for i in ids)
+
+
+def test_stations_endpoint(client):
+    data = client.get("/api/stations").get_json()
+    assert len(data) > 400 and {"id", "label"} <= set(data[0])
+
+
+def test_validation(client):
+    assert client.post("/api/route", json={"start": "x", "end": "y", "need": "elevator_only"}).status_code == 400
+
+
+def test_elevator_outage_forces_alternative(client):
+    start, end = station_id("34 St-Penn Station", "1"), station_id("Times Sq-42 St", "7")
+    # Ending at Times Sq with its elevator out -> nothing usable for elevator-only riders.
+    r = client.post("/api/route", json={"start": start, "end": end, "need": "elevator_only"}).get_json()
+    assert r["plan"]["verdict"] == "no_route" and r["ai_used"] is False
+
+
+def test_escalator_rider_gets_warning(client):
+    start, end = station_id("34 St-Penn Station", "1"), station_id("Times Sq-42 St", "7")
+    r = client.post("/api/route", json={"start": start, "end": end,
+                                        "need": "elevator_or_escalator"}).get_json()
+    assert r["plan"]["verdict"] == "warning"
+
+
+def test_upcoming_outage_ignored(client):
+    start, end = station_id("Grand Central-42 St", "4"), station_id("86 St", "4")
+    r = client.post("/api/route", json={"start": start, "end": end, "need": "elevator_only"}).get_json()
+    assert r["plan"]["verdict"] == "clear"
+
+
+def test_transfer_avoids_blocked_station(client):
+    # Route that would normally change trains at Times Sq must find another way.
+    start, end = station_id("Van Cortlandt Park-242 St", "1"), station_id("Atlantic Av-Barclays Ctr", "N")
+    r = client.post("/api/route", json={"start": start, "end": end, "need": "elevator_only"}).get_json()
+    plan = r["plan"]
+    assert plan["verdict"] in ("clear", "alternative")
+    assert all(c["status"] != "blocked" for c in plan["recommended"]["checks"])
+
+
+def test_ai_fallback_when_nvidia_fails(client, monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "bad")
+    monkeypatch.setattr(ai_client.requests, "post",
+                        lambda *a, **k: (_ for _ in ()).throw(ai_client.requests.ConnectionError()))
+    start, end = station_id("Grand Central-42 St", "4"), station_id("86 St", "4")
+    r = client.post("/api/route", json={"start": start, "end": end, "need": "elevator_only"}).get_json()
+    assert r["ai_used"] is False and r["reply"]
+
+
+def test_retired_model_triggers_discovery(monkeypatch):
+    """A 410 'Gone' on the configured model -> pick a live model from /models and retry."""
+    calls = []
+
+    class Resp:
+        def __init__(self, status, payload):
+            self.status_code, self._p, self.ok, self.text = status, payload, status < 400, str(payload)
+        def json(self):
+            return self._p
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append(json["model"])
+        if json["model"] == "meta/llama-3.1-8b-instruct":
+            return Resp(410, {"detail": "end of life"})
+        return Resp(200, {"choices": [{"message": {"content": "hi there"}}]})
+
+    monkeypatch.setattr(ai_client.requests, "post", fake_post)
+    monkeypatch.setattr(ai_client.requests, "get", lambda *a, **k: Resp(
+        200, {"data": [{"id": "meta/llama-3.1-8b-instruct"}, {"id": "meta/llama-3.3-70b-instruct"}]}))
+    monkeypatch.setenv("NVIDIA_API_KEY", "k")
+    monkeypatch.setenv("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+    monkeypatch.setattr(ai_client, "_model_override", None)
+    plan = {"start": "a", "end": "b", "need": "elevator_only", "verdict": "clear",
+            "fastest": None, "recommended": None}
+    assert ai_client.ask(plan) == ("hi there", True, None)
+    assert calls == ["meta/llama-3.1-8b-instruct", "meta/llama-3.3-70b-instruct"]
+
+
+def test_tavily_runs_only_for_blocked_trips_and_is_optional(client, monkeypatch):
+    from accessroute import web_search
+    calls = []
+    monkeypatch.setattr(web_search, "search_alternatives",
+                        lambda plan: calls.append(plan["verdict"]) or [{"title": "t", "url": "https://mta.info", "snippet": "s"}])
+    blocked = {"start": station_id("34 St-Penn Station", "1"), "end": station_id("Times Sq-42 St", "7"),
+               "need": "elevator_only"}
+    r = client.post("/api/route", json=blocked).get_json()
+    assert r["plan"]["web_results"][0]["url"] == "https://mta.info" and calls == ["no_route"]
+    clear = {"start": station_id("Grand Central-42 St", "4"), "end": station_id("86 St", "4"),
+             "need": "elevator_only"}
+    r = client.post("/api/route", json=clear).get_json()
+    assert "web_results" not in r["plan"] and calls == ["no_route"]  # not called for clear trips
+
+
+def test_tavily_failure_returns_empty(monkeypatch):
+    from accessroute import web_search
+    monkeypatch.setenv("TAVILY_API_KEY", "k")
+    monkeypatch.setattr(web_search, "_cache", {})
+    monkeypatch.setattr(web_search.requests, "post",
+                        lambda *a, **k: (_ for _ in ()).throw(web_search.requests.Timeout()))
+    assert web_search.search_alternatives({"start": "a", "end": "b"}) == []
+    monkeypatch.delenv("TAVILY_API_KEY")
+    assert web_search.search_alternatives({"start": "a", "end": "b"}) == []
+
+
+def test_tavily_parses_results(monkeypatch):
+    from accessroute import web_search
+    monkeypatch.setenv("TAVILY_API_KEY", "k")
+    monkeypatch.setattr(web_search, "_cache", {})
+    seen = {}
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"results": [{"title": "Bus", "url": "https://mta.info/bus", "content": "x" * 500}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        seen.update(url=url, auth=headers["Authorization"], body=json)
+        return R()
+    monkeypatch.setattr(web_search.requests, "post", fake_post)
+    out = web_search.search_alternatives({"start": "A", "end": "B"})
+    assert out == [{"title": "Bus", "url": "https://mta.info/bus", "snippet": "x" * 300}]
+    assert seen["url"] == "https://api.tavily.com/search" and seen["auth"] == "Bearer k"

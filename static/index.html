@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>AccessRoute NYC – accessible subway route checker</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Lets keyboard / screen-reader users jump past the header (WCAG 2.4.1) -->
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header>
+    <h1>AccessRoute <span>NYC</span></h1>
+    <p>Check live elevator &amp; escalator outages before you ride.</p>
+  </header>
+
+  <main id="main">
+    <!-- Polite live region: announces progress and results to screen readers -->
+    <div id="status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <form id="trip-form" autocomplete="off" aria-labelledby="form-title">
+      <h2 id="form-title">Plan your trip</h2>
+
+      <div class="field">
+        <label for="start">Starting station</label>
+        <input id="start" list="station-list" placeholder="Start typing a station name" required
+               aria-describedby="station-hint">
+      </div>
+      <div class="field">
+        <label for="end">Destination station</label>
+        <input id="end" list="station-list" placeholder="Start typing a station name" required
+               aria-describedby="station-hint">
+      </div>
+      <p id="station-hint" class="hint">Type a station name, then choose it from the suggestions. The letters or numbers in brackets are the train lines.</p>
+      <datalist id="station-list"></datalist>
+
+      <fieldset>
+        <legend>My accessibility need</legend>
+        <label class="choice"><input type="radio" name="need" value="elevator_only" checked>
+          <span>Elevator only</span></label>
+        <label class="choice"><input type="radio" name="need" value="elevator_or_escalator">
+          <span>Elevator or escalator</span></label>
+      </fieldset>
+
+      <button type="submit" id="go" class="primary">Check my route</button>
+    </form>
+
+    <!-- Form errors; role=alert makes screen readers announce it immediately -->
+    <p id="error" role="alert" hidden></p>
+
+    <section id="result" hidden aria-labelledby="result-title" tabindex="-1">
+      <h2 id="result-title">Your route result</h2>
+      <p id="verdict" class="verdict"></p>
+
+      <h3 id="chat-title">Assistant</h3>
+      <div class="chat" id="chat" role="log" aria-live="polite" aria-labelledby="chat-title"></div>
+      <form id="chat-form" aria-label="Ask a follow-up question">
+        <label for="chat-input" class="sr-only">Follow-up question about this trip</label>
+        <input id="chat-input" placeholder="Ask a follow-up, e.g. is there a bus alternative?" maxlength="500">
+        <button type="submit" id="ask" class="primary">Ask</button>
+      </form>
+
+      <div id="web" hidden>
+        <h3>Other options (web search)</h3>
+        <ul id="web-links"></ul>
+      </div>
+
+      <h3 id="route-title"></h3>
+      <ol id="legs" aria-label="Train legs"></ol>
+      <h3>Stations where you need working equipment</h3>
+      <ul id="checks"></ul>
+      <p id="footnote" class="muted"></p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
