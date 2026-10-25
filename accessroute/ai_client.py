@@ -142,4 +142,6 @@ def ask(plan, history=None, question=None):
             return _chat(key, replacement, messages), True, None
     except (requests.RequestException, RuntimeError, KeyError, IndexError, ValueError) as exc:
         log.warning("NVIDIA API call failed (model=%s): %s", model, exc)
-        return fallback_message(plan), False, str(exc)
+        # Keep the on-page reason short; the full error is in the server log.
+        short = "could not connect to the NVIDIA API" if isinstance(exc, requests.RequestException) else str(exc)
+        return fallback_message(plan), False, short
