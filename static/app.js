@@ -72,7 +72,7 @@ function renderRoute(route) {
       `<div class="outage">${esc(o.type)} out: ${esc(o.serving) || "location not given"}` +
       `${o.reason ? " – " + esc(o.reason) : ""}` +
       `${o.estimated_return ? " (back about " + esc(o.estimated_return) + ")" : ""}</div>`).join("");
-    if (c.no_ada) detail += `<div class="outage">No elevator or escalator at this station.</div>`;
+    if (c.no_ada) detail += `<div class="outage">No elevator or escalator listed at this station.</div>`;
     const [icon, label] = BADGE[c.status];
     return `<li class="${c.status}"><div class="row"><strong>${esc(c.name)}</strong>` +
            `<span class="badge"><span aria-hidden="true">${icon}</span> ${label}</span></div>${detail}</li>`;

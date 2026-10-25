@@ -56,7 +56,7 @@ def _plain_check(c):
                                  + (f', expected back: {o["estimated_return"]}' if o["estimated_return"] else "")
                                  for o in c["outages"]]
     if c["no_ada"]:
-        out["note"] = "no elevator or escalator at this station"
+        out["note"] = "no elevator or escalator listed at this station"
     return out
 
 
