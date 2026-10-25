@@ -14,7 +14,18 @@ log = logging.getLogger(__name__)
 
 # OpenAI-compatible base URL; the chat endpoint is {base}/chat/completions.
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
-DEFAULT_MODEL = "meta/llama-3.1-8b-instruct"
+DEFAULT_MODEL = "meta/llama-3.3-70b-instruct"
+
+# NVIDIA retires models over time (HTTP 404/410). When that happens we ask the
+# API what is currently available and pick the first of these, else any instruct model.
+PREFERRED_MODELS = [
+    "meta/llama-3.3-70b-instruct",
+    "meta/llama-3.1-70b-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "meta/llama-3.1-405b-instruct",
+    "mistralai/mistral-small-24b-instruct",
+]
+_model_override = None  # model discovered at runtime after the configured one failed
 
 SYSTEM_PROMPT = (
     "You are AccessRoute NYC, a friendly assistant helping New York City subway riders "
@@ -57,6 +68,40 @@ def fallback_message(plan):
             "Access-A-Ride, or check mta.info/elevator or call 511 before heading out.")
 
 
+def _headers(key):
+    return {"Authorization": f"Bearer {key}", "Accept": "application/json",
+            "Content-Type": "application/json"}
+
+
+def _discover_model(key, exclude):
+    """Pick a currently-available chat model from GET {base}/models, or None."""
+    resp = requests.get(f"{NVIDIA_BASE_URL}/models", headers=_headers(key), timeout=20)
+    if not resp.ok:
+        return None
+    ids = [m.get("id", "") for m in resp.json().get("data", [])]
+    ids = [i for i in ids if i and i != exclude]
+    for pref in PREFERRED_MODELS:
+        if pref in ids:
+            return pref
+    return next((i for i in ids if "instruct" in i.lower() and "vision" not in i.lower()), None)
+
+
+def _chat(key, model, messages):
+    """One chat-completions call. Returns the reply text or raises RuntimeError(status, body)."""
+    resp = requests.post(
+        f"{NVIDIA_BASE_URL}/chat/completions", headers=_headers(key),
+        json={"model": model, "messages": messages, "temperature": 0.3,
+              "max_tokens": 500, "stream": False},
+        timeout=45,
+    )
+    if not resp.ok:
+        # NVIDIA's body explains the problem (bad key, retired model, ...).
+        err = RuntimeError(f"HTTP {resp.status_code} from NVIDIA: {resp.text[:200]}")
+        err.status = resp.status_code
+        raise err
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
 def ask(plan, history=None, question=None):
     """Return (reply_text, ai_used, error).
 
@@ -64,6 +109,7 @@ def ask(plan, history=None, question=None):
     (None for the initial recommendation). `error` is a short reason string when
     the AI could not be used (reply_text is then the plain fallback), else None.
     """
+    global _model_override
     key = os.getenv("NVIDIA_API_KEY", "").strip()
     if not key:
         return fallback_message(plan), False, "NVIDIA_API_KEY is not set"
@@ -73,20 +119,21 @@ def ask(plan, history=None, question=None):
     messages += (history or [])[-10:]
     messages.append({"role": "user", "content": question or
                      "Please tell me whether I can make this trip and which route to take."})
-    model = os.getenv("NVIDIA_MODEL", DEFAULT_MODEL).strip()
+    model = _model_override or os.getenv("NVIDIA_MODEL", DEFAULT_MODEL).strip()
     try:
-        resp = requests.post(
-            f"{NVIDIA_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {key}", "Accept": "application/json",
-                     "Content-Type": "application/json"},
-            json={"model": model, "messages": messages,
-                  "temperature": 0.3, "max_tokens": 500, "stream": False},
-            timeout=45,
-        )
-        if not resp.ok:
-            # NVIDIA returns a JSON/text body explaining the problem (bad key, unknown model...).
-            raise RuntimeError(f"HTTP {resp.status_code} from NVIDIA: {resp.text[:200]}")
-        return resp.json()["choices"][0]["message"]["content"].strip(), True, None
+        try:
+            return _chat(key, model, messages), True, None
+        except RuntimeError as exc:
+            if getattr(exc, "status", None) not in (404, 410):
+                raise
+            # Configured model is gone: find a live one and retry once.
+            replacement = _discover_model(key, exclude=model)
+            if not replacement:
+                raise
+            log.warning("Model %s unavailable; switching to %s. Update NVIDIA_MODEL in .env.",
+                        model, replacement)
+            _model_override = replacement
+            return _chat(key, replacement, messages), True, None
     except (requests.RequestException, RuntimeError, KeyError, IndexError, ValueError) as exc:
         log.warning("NVIDIA API call failed (model=%s): %s", model, exc)
         return fallback_message(plan), False, str(exc)

@@ -94,3 +94,31 @@ def test_ai_fallback_when_nvidia_fails(client, monkeypatch):
     start, end = station_id("Grand Central-42 St", "4"), station_id("86 St", "4")
     r = client.post("/api/route", json={"start": start, "end": end, "need": "elevator_only"}).get_json()
     assert r["ai_used"] is False and r["reply"]
+
+
+def test_retired_model_triggers_discovery(monkeypatch):
+    """A 410 'Gone' on the configured model -> pick a live model from /models and retry."""
+    calls = []
+
+    class Resp:
+        def __init__(self, status, payload):
+            self.status_code, self._p, self.ok, self.text = status, payload, status < 400, str(payload)
+        def json(self):
+            return self._p
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append(json["model"])
+        if json["model"] == "meta/llama-3.1-8b-instruct":
+            return Resp(410, {"detail": "end of life"})
+        return Resp(200, {"choices": [{"message": {"content": "hi there"}}]})
+
+    monkeypatch.setattr(ai_client.requests, "post", fake_post)
+    monkeypatch.setattr(ai_client.requests, "get", lambda *a, **k: Resp(
+        200, {"data": [{"id": "meta/llama-3.1-8b-instruct"}, {"id": "meta/llama-3.3-70b-instruct"}]}))
+    monkeypatch.setenv("NVIDIA_API_KEY", "k")
+    monkeypatch.setenv("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+    monkeypatch.setattr(ai_client, "_model_override", None)
+    plan = {"start": "a", "end": "b", "need": "elevator_only", "verdict": "clear",
+            "fastest": None, "recommended": None}
+    assert ai_client.ask(plan) == ("hi there", True, None)
+    assert calls == ["meta/llama-3.1-8b-instruct", "meta/llama-3.3-70b-instruct"]
