@@ -1,7 +1,7 @@
 # AccessRoute NYC
 
 An accessible subway route checker that alerts riders with mobility needs about
-elevator and escalator outages before they travel, with a conversational AI summary.
+elevator and escalator outages before they travel.
 
 Pick a start and end station and your accessibility need:
 
@@ -11,20 +11,18 @@ Pick a start and end station and your accessibility need:
 
 The backend pulls the live [MTA elevator/escalator outage XML feed](https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fnyct_ene.xml),
 finds the fastest route, checks every station where you board, change trains or exit,
-and re-routes around blocked stations when it can. NVIDIA's free hosted LLM API then
-explains the result conversationally (you can ask follow-up questions).
+and re-routes around blocked stations when it can. For each station you'll use, it shows
+whether the elevator and escalator are working, what is out of service, and the expected return date.
 
 ## Setup
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # then paste your key into .env
 python app.py               # http://localhost:5000
 ```
 
-Get a free NVIDIA API key at <https://build.nvidia.com> and set `NVIDIA_API_KEY` in `.env`
-(`.env` is git-ignored). Without a key the app still works and shows a plain-text summary.
+No API keys are needed. To change the port, copy `.env.example` to `.env` and set `PORT`.
 
 ## Layout
 
@@ -34,8 +32,6 @@ Get a free NVIDIA API key at <https://build.nvidia.com> and set `NVIDIA_API_KEY`
 | `accessroute/mta_feed.py` | Fetch/parse the MTA XML feeds, station-name normalising |
 | `accessroute/subway_graph.py` | Subway map + outage-aware routing (Dijkstra) |
 | `accessroute/planner.py` | Matches outages to stations, classifies the trip |
-| `accessroute/web_search.py` | Optional Tavily search for alternatives (blocked trips only) |
-| `accessroute/ai_client.py` | NVIDIA chat-completions client with fallback text |
 | `scripts/build_stations.py` | Rebuilds `data/stations.json` from the MTA static GTFS |
 | `static/` | JavaScript frontend |
 | `tests/` | Offline tests (`pytest`) using a sample outage feed |

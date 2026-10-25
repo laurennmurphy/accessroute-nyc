@@ -34,7 +34,7 @@ TEXT_PAIRS = [
     ("text", "bg", 4.5), ("text", "card", 4.5),
     ("muted", "bg", 4.5), ("muted", "card", 4.5),      # descriptions, hints, outage details
     ("accent", "bg", 4.5), ("accent", "card", 4.5),    # links, headings
-    ("on-accent", "accent", 4.5),                      # buttons, user chat bubbles, line badges
+    ("on-accent", "accent", 4.5),                      # buttons, line badges
 ]
 PILL_BACKGROUNDS = ["ok", "warn", "bad"]               # verdict pills use white text
 

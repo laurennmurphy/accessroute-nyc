@@ -3,8 +3,7 @@
 Endpoints
   GET  /              the single-page frontend
   GET  /api/stations  station list for autocomplete
-  POST /api/route     {start, end, need} -> trip analysis + AI recommendation
-  POST /api/chat      follow-up questions about a trip analysis
+  POST /api/route     {start, end, need} -> trip analysis from live MTA data
 Run with:  python app.py
 """
 import logging
@@ -13,11 +12,11 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
-logging.basicConfig(level=logging.INFO)
-load_dotenv()  # read NVIDIA_API_KEY etc. from .env before importing modules that use them
+from accessroute import mta_feed, planner
+from accessroute.subway_graph import ELEVATOR_ONLY, ELEVATOR_OR_ESCALATOR, SubwayGraph
 
-from accessroute import ai_client, mta_feed, planner, web_search  # noqa: E402
-from accessroute.subway_graph import ELEVATOR_ONLY, ELEVATOR_OR_ESCALATOR, SubwayGraph  # noqa: E402
+logging.basicConfig(level=logging.INFO)
+load_dotenv()  # optional: lets you set PORT in a .env file
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 graph = SubwayGraph()
@@ -52,26 +51,7 @@ def route():
         return jsonify(error="Couldn't get the latest elevator and escalator status from the MTA. Please try again in a minute."), 502
 
     plan = planner.plan_trip(graph, start, end, need, outages, mta_feed.fetch_ada_station_names())
-    # Optional Tavily lookup, only when the fastest route isn't simply usable.
-    if plan["verdict"] in ("alternative", "no_route"):
-        plan["web_results"] = web_search.search_alternatives(plan)
-    reply, ai_used, ai_error = ai_client.ask(plan)
-    return jsonify(plan=plan, reply=reply, ai_used=ai_used, ai_error=ai_error,
-                   total_outages=len(outages))
-
-
-@app.post("/api/chat")
-def chat():
-    body = request.get_json(silent=True) or {}
-    plan, question = body.get("plan"), (body.get("question") or "").strip()
-    history = [m for m in body.get("history", [])
-               if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)]
-    if not plan or not question:
-        return jsonify(error="Missing trip or question."), 400
-    reply, ai_used, ai_error = ai_client.ask(plan, history, question[:500])
-    if not ai_used:
-        reply = f"The AI assistant isn't available right now ({ai_error}). " + reply
-    return jsonify(reply=reply)
+    return jsonify(plan=plan, summary=planner.summarize(plan), total_outages=len(outages))
 
 
 if __name__ == "__main__":
