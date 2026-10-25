@@ -5,7 +5,7 @@ elevator and escalator outages before they travel, with a conversational AI summ
 
 Pick a start and end station and your accessibility need:
 
-- **Elevator only** – any elevator outage at a station you must use blocks it.
+- **Elevator only** – any elevator that is out of service at a station you must use blocks it.
 - **Elevator or escalator** – an elevator outage is only a warning (use the escalator),
   unless an escalator there is out too, which blocks the station.
 
@@ -45,6 +45,6 @@ Get a free NVIDIA API key at <https://build.nvidia.com> and set `NVIDIA_API_KEY`
 - The outage feed identifies stations by name only, so names are matched to the subway map
   using normalised names plus the feed's train list. Unmatched outages are reported in the UI.
 - The app also reads the MTA's companion `nyct_ene_equipments.xml` feed to learn which stations
-  have ADA equipment; if that feed is unavailable, all stations are assumed accessible.
+  have an elevator or escalator; if that feed is unavailable, all stations are assumed accessible.
 - Routes are chosen by number of stops with a transfer penalty, not schedules or real-time
   train positions. Service changes aren't reflected. Always confirm at <https://mta.info/elevator>.

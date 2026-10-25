@@ -53,11 +53,11 @@ function addBubble(role, text) {
 
 // Icons are decorative (aria-hidden); the text beside them carries the meaning.
 const BADGE = {
-  ok: ["✔", "Working"], warning: ["▲", "Elevator out – use escalator"], blocked: ["✖", "Not usable"],
+  ok: ["✔", "Working"], warning: ["▲", "Elevator out – use escalator"], blocked: ["✖", "Not accessible"],
 };
 const VERDICT = {
-  clear: ["✔", "Clear to go"], warning: ["▲", "Usable, with a caveat"],
-  alternative: ["▲", "Use the alternative route"], no_route: ["✖", "No accessible route right now"],
+  clear: ["✔", "Clear to go"], warning: ["▲", "You can go, but there’s a catch"],
+  alternative: ["▲", "Take the alternative route"], no_route: ["✖", "No accessible route right now"],
 };
 
 // Render the leg-by-leg directions + per-station outage checks for one route.
@@ -72,7 +72,7 @@ function renderRoute(route) {
       `<div class="outage">${esc(o.type)} out: ${esc(o.serving) || "location not given"}` +
       `${o.reason ? " – " + esc(o.reason) : ""}` +
       `${o.estimated_return ? " (back about " + esc(o.estimated_return) + ")" : ""}</div>`).join("");
-    if (c.no_ada) detail += `<div class="outage">The MTA does not list ADA equipment at this station.</div>`;
+    if (c.no_ada) detail += `<div class="outage">No elevator or escalator at this station.</div>`;
     const [icon, label] = BADGE[c.status];
     return `<li class="${c.status}"><div class="row"><strong>${esc(c.name)}</strong>` +
            `<span class="badge"><span aria-hidden="true">${icon}</span> ${label}</span></div>${detail}</li>`;
@@ -104,7 +104,7 @@ function renderResult(data) {
   const shown = plan.recommended || plan.fastest;
   $("route-title").textContent = plan.recommended
     ? (plan.verdict === "alternative" ? "Recommended alternative route" : "Recommended route")
-    : "Fastest route (blocked)";
+    : "This route isn’t fully accessible right now";
   $("route-title").hidden = !shown;
   if (shown) renderRoute(shown);
   else { $("legs").innerHTML = ""; $("checks").innerHTML = ""; }
@@ -117,7 +117,7 @@ function renderResult(data) {
     `<span class="sr-only"> (opens in a new tab)</span></a><div class="muted">${esc(w.snippet)}</div></li>`).join("");
 
   let note = ai_used ? "" : `AI assistant unavailable (${ai_error || "unknown error"}) – showing a standard summary. `;
-  if (plan.unmatched_outages) note += `${plan.unmatched_outages} outage record(s) couldn’t be matched to a station. `;
+  if (plan.unmatched_outages) note += `The MTA reported ${plan.unmatched_outages} elevator or escalator problem(s) we couldn’t match to a station, so they aren’t included above. `;
   note += "Always double-check at mta.info/elevator before you travel.";
   $("footnote").textContent = note;
 
@@ -145,8 +145,8 @@ $("trip-form").addEventListener("submit", async (e) => {
     return $(bad[0]).focus();
   }
 
-  setBusy($("go"), true, "Check my route", "Checking live MTA data…");
-  announce("Checking live MTA data.");
+  setBusy($("go"), true, "Check my route", "Checking the latest elevator and escalator status…");
+  announce("Checking the latest elevator and escalator status.");
   try {
     const res = await fetch("/api/route", {
       method: "POST", headers: { "Content-Type": "application/json" },
