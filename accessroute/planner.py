@@ -117,3 +117,19 @@ def plan_trip(graph, start, end, need, outages, ada_names=None):
     else:
         verdict = "clear"
     return {**result, "verdict": verdict, "fastest": fastest_info, "recommended": usable_info}
+
+
+def summarize(plan):
+    """One plain-language sentence or two describing the result."""
+    v = plan["verdict"]
+    if v == "clear":
+        return (f"Good news! Your route from {plan['start']} to {plan['end']} has no "
+                "elevators or escalators out of service.")
+    if v == "warning":
+        return ("You can make this trip, but an elevator is out of service at a station "
+                "you'll use. You'll need the escalator there.")
+    if v == "alternative":
+        return ("The fastest route has an elevator or escalator out of service at a station "
+                "you'd need, but there is an alternative route that avoids it, shown below.")
+    return ("We couldn't find a fully accessible route between these stations right now. "
+            "Consider an accessible bus or Access-A-Ride, or call 511 before heading out.")

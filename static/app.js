@@ -5,8 +5,6 @@
 const $ = (id) => document.getElementById(id);
 
 let stationsByLabel = {};   // "86 St (4 5 6)" -> station id
-let currentPlan = null;     // last trip analysis, sent back with follow-up questions
-let history = [];           // chat turns for follow-ups: [{role, content}]
 
 // Escape text before putting it in innerHTML (outage text comes from the MTA).
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -41,16 +39,6 @@ function showError(msg, invalidIds = []) {
   });
 }
 
-// Add a message bubble. A hidden prefix tells screen-reader users who is speaking.
-function addBubble(role, text) {
-  const div = document.createElement("div");
-  div.className = `bubble ${role}`;
-  div.innerHTML = `<span class="sr-only">${role === "user" ? "You asked: " : "Assistant: "}</span>`;
-  div.appendChild(document.createTextNode(text));
-  $("chat").appendChild(div);
-  div.scrollIntoView({ block: "nearest" });
-}
-
 // Icons are decorative (aria-hidden); the text beside them carries the meaning.
 const BADGE = {
   ok: ["✔", "Working"], warning: ["▲", "Elevator out – use escalator"], blocked: ["✖", "Not accessible"],
@@ -69,9 +57,9 @@ function renderRoute(route) {
 
   $("checks").innerHTML = route.checks.map((c) => {
     let detail = c.outages.map((o) =>
-      `<div class="outage">${esc(o.type)} out: ${esc(o.serving) || "location not given"}` +
-      `${o.reason ? " – " + esc(o.reason) : ""}` +
-      `${o.estimated_return ? " (back about " + esc(o.estimated_return) + ")" : ""}</div>`).join("");
+      `<div class="outage"><div>${esc(o.type)} out: ${esc(o.serving) || "location not given"}` +
+      `${o.reason ? " – " + esc(o.reason) : ""}</div>` +
+      `<div><strong>${o.estimated_return ? "Expected back: " + esc(o.estimated_return) : "Return date not announced"}</strong></div></div>`).join("");
     if (c.no_ada) detail += `<div class="outage">No elevator or escalator listed at this station.</div>`;
     const [icon, label] = BADGE[c.status];
     return `<li class="${c.status}"><div class="row"><strong>${esc(c.name)}</strong>` +
@@ -89,16 +77,13 @@ function summarize(plan) {
 }
 
 function renderResult(data) {
-  const { plan, reply, ai_used, ai_error } = data;
-  currentPlan = plan;
-  history = [{ role: "assistant", content: reply }];
+  const { plan, summary } = data;
 
   const [vIcon, vLabel] = VERDICT[plan.verdict];
   $("verdict").className = `verdict ${plan.verdict}`;
   $("verdict").innerHTML = `<span aria-hidden="true">${vIcon}</span> ${vLabel}`;
 
-  $("chat").innerHTML = "";
-  addBubble("assistant", reply);
+  $("summary").textContent = summary;
 
   // Show the recommended route; if none, show the fastest route so the user sees what's blocked.
   const shown = plan.recommended || plan.fastest;
@@ -109,18 +94,7 @@ function renderResult(data) {
   if (shown) renderRoute(shown);
   else { $("legs").innerHTML = ""; $("checks").innerHTML = ""; }
 
-  // Optional Tavily links (only present for alternative / no_route verdicts).
-  const web = plan.web_results || [];
-  $("web").hidden = !web.length;
-  $("web-links").innerHTML = web.map((w) =>
-    `<li><a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.title || w.url)}` +
-    `<span class="sr-only"> (opens in a new tab)</span></a><div class="muted">${esc(w.snippet)}</div></li>`).join("");
-
-  let note = ai_used ? "" : `AI assistant unavailable (${ai_error || "unknown error"}) – showing a standard summary. `;
-  if (plan.unmatched_outages) note += `The MTA reported ${plan.unmatched_outages} elevator or escalator problem(s) we couldn’t match to a station, so they aren’t included above. `;
-  note += "Always double-check at mta.info/elevator before you travel.";
-  $("footnote").textContent = note;
-
+  $("footnote").textContent = "Status comes from the MTA’s live elevator and escalator feed. Always double-check at mta.info/elevator before you travel.";
   $("result").hidden = false;
   announce(summarize(plan));
   $("result").focus({ preventScroll: false });   // move keyboard focus to the new results
@@ -160,27 +134,6 @@ $("trip-form").addEventListener("submit", async (e) => {
     $("result").hidden = true;
   } finally {
     setBusy($("go"), false, "Check my route", "");
-  }
-});
-
-// Follow-up questions about the current trip.
-$("chat-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const question = $("chat-input").value.trim();
-  if (!question || !currentPlan) return;
-  $("chat-input").value = "";
-  addBubble("user", question);
-  try {
-    const res = await fetch("/api/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan: currentPlan, history, question }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    history.push({ role: "user", content: question }, { role: "assistant", content: data.reply });
-    addBubble("assistant", data.reply);   // the chat log is aria-live, so this is announced
-  } catch (err) {
-    addBubble("assistant", "Sorry, I couldn’t answer that: " + err.message);
   }
 });
 
