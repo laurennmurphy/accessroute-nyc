@@ -50,7 +50,7 @@ function renderRoute(route) {
 }
 
 function renderResult(data) {
-  const { plan, reply, ai_used } = data;
+  const { plan, reply, ai_used, ai_error } = data;
   currentPlan = plan;
   history = [{ role: "assistant", content: reply }];
 
@@ -73,7 +73,7 @@ function renderResult(data) {
   if (shown) renderRoute(shown);
   else { $("legs").innerHTML = ""; $("checks").innerHTML = ""; }
 
-  let note = ai_used ? "" : "AI assistant unavailable (set NVIDIA_API_KEY in .env) — showing a standard summary. ";
+  let note = ai_used ? "" : `AI assistant unavailable (${ai_error || "unknown error"}) — showing a standard summary. `;
   if (plan.unmatched_outages) note += `${plan.unmatched_outages} outage record(s) couldn’t be matched to a station. `;
   note += "Always double-check at mta.info/elevator before you travel.";
   $("footnote").textContent = note;

@@ -7,11 +7,13 @@ Endpoints
   POST /api/chat      follow-up questions about a trip analysis
 Run with:  python app.py
 """
+import logging
 import os
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 
+logging.basicConfig(level=logging.INFO)
 load_dotenv()  # read NVIDIA_API_KEY etc. from .env before importing modules that use them
 
 from accessroute import ai_client, mta_feed, planner  # noqa: E402
@@ -50,8 +52,9 @@ def route():
         return jsonify(error="Couldn't reach the MTA outage feed. Please try again in a minute."), 502
 
     plan = planner.plan_trip(graph, start, end, need, outages, mta_feed.fetch_ada_station_names())
-    reply, ai_used = ai_client.ask(plan)
-    return jsonify(plan=plan, reply=reply, ai_used=ai_used, total_outages=len(outages))
+    reply, ai_used, ai_error = ai_client.ask(plan)
+    return jsonify(plan=plan, reply=reply, ai_used=ai_used, ai_error=ai_error,
+                   total_outages=len(outages))
 
 
 @app.post("/api/chat")
@@ -62,9 +65,9 @@ def chat():
                if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)]
     if not plan or not question:
         return jsonify(error="Missing trip or question."), 400
-    reply, ai_used = ai_client.ask(plan, history, question[:500])
+    reply, ai_used, ai_error = ai_client.ask(plan, history, question[:500])
     if not ai_used:
-        reply = "The AI assistant isn't available right now (check NVIDIA_API_KEY). " + reply
+        reply = f"The AI assistant isn't available right now ({ai_error}). " + reply
     return jsonify(reply=reply)
 
 

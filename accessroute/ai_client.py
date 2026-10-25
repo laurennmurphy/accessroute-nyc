@@ -4,11 +4,16 @@ The endpoint is OpenAI-compatible. Get a free key at https://build.nvidia.com
 and put it in .env as NVIDIA_API_KEY. If the key is missing or the call fails,
 we fall back to a plain templated answer so the app still works.
 """
+import json
+import logging
 import os
 
 import requests
 
-NVIDIA_URL = os.getenv("NVIDIA_API_URL", "https://integrate.api.nvidia.com/v1/chat/completions")
+log = logging.getLogger(__name__)
+
+# OpenAI-compatible base URL; the chat endpoint is {base}/chat/completions.
+NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").rstrip("/")
 DEFAULT_MODEL = "meta/llama-3.1-8b-instruct"
 
 SYSTEM_PROMPT = (
@@ -53,30 +58,35 @@ def fallback_message(plan):
 
 
 def ask(plan, history=None, question=None):
-    """Return (reply_text, ai_used).
+    """Return (reply_text, ai_used, error).
 
     history: prior chat turns [{role, content}], question: the new user message
-    (None for the initial recommendation).
+    (None for the initial recommendation). `error` is a short reason string when
+    the AI could not be used (reply_text is then the plain fallback), else None.
     """
     key = os.getenv("NVIDIA_API_KEY", "").strip()
     if not key:
-        return fallback_message(plan), False
-    import json
+        return fallback_message(plan), False, "NVIDIA_API_KEY is not set"
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT + "\n\nTRIP ANALYSIS:\n" + json.dumps(_short(plan))},
     ]
     messages += (history or [])[-10:]
     messages.append({"role": "user", "content": question or
                      "Please tell me whether I can make this trip and which route to take."})
+    model = os.getenv("NVIDIA_MODEL", DEFAULT_MODEL).strip()
     try:
         resp = requests.post(
-            NVIDIA_URL,
-            headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
-            json={"model": os.getenv("NVIDIA_MODEL", DEFAULT_MODEL), "messages": messages,
-                  "temperature": 0.3, "max_tokens": 500},
+            f"{NVIDIA_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Accept": "application/json",
+                     "Content-Type": "application/json"},
+            json={"model": model, "messages": messages,
+                  "temperature": 0.3, "max_tokens": 500, "stream": False},
             timeout=45,
         )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip(), True
-    except (requests.RequestException, KeyError, IndexError, ValueError):
-        return fallback_message(plan), False
+        if not resp.ok:
+            # NVIDIA returns a JSON/text body explaining the problem (bad key, unknown model...).
+            raise RuntimeError(f"HTTP {resp.status_code} from NVIDIA: {resp.text[:200]}")
+        return resp.json()["choices"][0]["message"]["content"].strip(), True, None
+    except (requests.RequestException, RuntimeError, KeyError, IndexError, ValueError) as exc:
+        log.warning("NVIDIA API call failed (model=%s): %s", model, exc)
+        return fallback_message(plan), False, str(exc)
