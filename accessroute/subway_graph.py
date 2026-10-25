@@ -123,27 +123,34 @@ class SubwayGraph:
         return self._build_legs(path, best[goal])
 
     def _build_legs(self, path, cost):
-        """Turn a (station, line) state path into rider-friendly legs.
+        """Turn a (station, line) state path into rider-friendly steps.
 
-        Each leg is one continuous ride on a line. `needs_access` lists the
-        stations where the rider must use working equipment: the start, the
-        end, and both sides of every change of trains.
+        Steps are either {"type": "ride", ...} (one continuous ride on a line)
+        or {"type": "walk", ...} (a walk between linked stations of one
+        complex). Walks are kept so the steps always end at the destination.
+        `needs_access` lists the stations where the rider must use an elevator
+        or escalator: the start, the end, and both sides of every change.
         """
-        legs = [{"route": path[0][1], "stops": [path[0][0]]}]
+        legs = [{"type": "ride", "route": path[0][1], "stops": [path[0][0]]}]
         needs_access = [path[0][0]]
         for station, route in path[1:]:
-            if route == legs[-1]["route"]:
-                legs[-1]["stops"].append(station)        # still on the same train
-            else:                                        # changed trains
-                for sid in (legs[-1]["stops"][-1], station):
-                    if sid != needs_access[-1]:
-                        needs_access.append(sid)
-                legs.append({"route": route, "stops": [station]})
+            last = legs[-1]
+            if route == last["route"]:
+                last["stops"].append(station)            # still on the same train
+                continue
+            leaving = last["stops"][-1]                  # changed trains
+            if station != leaving:                       # ...by walking to another station
+                legs.append({"type": "walk", "route": None, "stops": [leaving, station]})
+            for sid in (leaving, station):
+                if sid != needs_access[-1]:
+                    needs_access.append(sid)
+            legs.append({"type": "ride", "route": route, "stops": [station]})
         if path[-1][0] != needs_access[-1]:
             needs_access.append(path[-1][0])
-        legs = [l for l in legs if len(l["stops"]) > 1]  # drop zero-length legs
+        # drop zero-length rides (e.g. a transfer immediately followed by a walk)
+        legs = [l for l in legs if l["type"] == "walk" or len(l["stops"]) > 1]
         return {
-            "legs": [{"route": l["route"], "stops": l["stops"],
+            "legs": [{"type": l["type"], "route": l["route"], "stops": l["stops"],
                       "from": self.name(l["stops"][0]), "to": self.name(l["stops"][-1]),
                       "num_stops": len(l["stops"]) - 1} for l in legs],
             "needs_access": needs_access,

@@ -87,3 +87,4 @@ ol#legs, ul#checks { padding-left:0; list-style:none; margin:0; }
   form#trip-form, section#result { padding:14px; border-radius:12px; }
   h1 { font-size:1.75rem; }
 }
+.line.walk { background:transparent; color:var(--text); border:2px solid var(--border); }

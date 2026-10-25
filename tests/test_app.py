@@ -94,9 +94,10 @@ def test_response_has_plain_summary_and_outage_details(client):
     assert outage["type"] == "Elevator" and outage["estimated_return"] == "10/30/2026"
 
 
-def test_summaries_for_every_verdict():
+def test_summaries_name_the_chosen_stations_for_every_verdict():
     for verdict in ("clear", "warning", "alternative", "no_route"):
-        assert planner.summarize({"verdict": verdict, "start": "A", "end": "B"})
+        text = planner.summarize({"verdict": verdict, "start": "1 Av", "end": "14 St"})
+        assert "1 Av" in text and "14 St" in text
 
 
 def test_ai_and_search_removed(client):
@@ -104,3 +105,26 @@ def test_ai_and_search_removed(client):
     r = client.post("/api/route", json={"start": station_id("Grand Central-42 St", "4"),
                                         "end": station_id("86 St", "4"), "need": "elevator_only"}).get_json()
     assert "reply" not in r and "web_results" not in r["plan"]
+
+
+def test_route_steps_end_at_the_chosen_destination():
+    """A final walk between linked stations (6 Av -> 14 St) must appear as a step."""
+    g = app_module.graph
+    start = station_id("1 Av", "L")
+    end = station_id("14 St", "F")
+    route = g.find_route(start, end)
+    last = route["legs"][-1]
+    assert last["to"] == "14 St" and last["type"] == "walk" and last["from"] == "6 Av"
+    assert route["legs"][0]["from"] == "1 Av"
+
+
+def test_steps_are_contiguous():
+    """Every step starts where the previous one ended (no gaps, no wrong destination)."""
+    g = app_module.graph
+    for a, b in [("1 Av", "14 St"), ("Van Cortlandt Park-242 St", "Atlantic Av-Barclays Ctr"),
+                 ("Far Rockaway-Mott Av", "Flushing-Main St")]:
+        route = g.find_route(next(s for s, v in g.stations.items() if v["name"] == a),
+                             next(s for s, v in g.stations.items() if v["name"] == b))
+        assert route["legs"][-1]["to"] == b
+        for prev, nxt in zip(route["legs"], route["legs"][1:]):
+            assert prev["to"] == nxt["from"]

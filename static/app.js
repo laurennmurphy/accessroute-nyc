@@ -50,10 +50,16 @@ const VERDICT = {
 
 // Render the leg-by-leg directions + per-station outage checks for one route.
 function renderRoute(route) {
-  $("legs").innerHTML = route.legs.map((l) =>
-    `<li><span class="line" aria-hidden="true">${esc(l.route)}</span>` +
-    `<span class="sr-only">${esc(l.route)} train: </span>` +
-    `${esc(l.from)} to ${esc(l.to)} <span class="muted">(${l.num_stops} stop${l.num_stops === 1 ? "" : "s"})</span></li>`).join("");
+  $("legs").innerHTML = route.legs.map((l) => {
+    if (l.type === "walk") {   // walk between linked stations of one complex
+      const where = l.from === l.to ? `Change platforms at ${esc(l.from)}` : `Walk from ${esc(l.from)} to ${esc(l.to)}`;
+      return `<li><span class="line walk" aria-hidden="true">↔</span>${where} ` +
+             `<span class="muted">(connected stations)</span></li>`;
+    }
+    return `<li><span class="line" aria-hidden="true">${esc(l.route)}</span>` +
+      `<span class="sr-only">${esc(l.route)} train: </span>` +
+      `${esc(l.from)} to ${esc(l.to)} <span class="muted">(${l.num_stops} stop${l.num_stops === 1 ? "" : "s"})</span></li>`;
+  }).join("");
 
   $("checks").innerHTML = route.checks.map((c) => {
     let detail = c.outages.map((o) =>
