@@ -34,6 +34,7 @@ Get a free NVIDIA API key at <https://build.nvidia.com> and set `NVIDIA_API_KEY`
 | `accessroute/mta_feed.py` | Fetch/parse the MTA XML feeds, station-name normalising |
 | `accessroute/subway_graph.py` | Subway map + outage-aware routing (Dijkstra) |
 | `accessroute/planner.py` | Matches outages to stations, classifies the trip |
+| `accessroute/web_search.py` | Optional Tavily search for alternatives (blocked trips only) |
 | `accessroute/ai_client.py` | NVIDIA chat-completions client with fallback text |
 | `scripts/build_stations.py` | Rebuilds `data/stations.json` from the MTA static GTFS |
 | `static/` | JavaScript frontend |

@@ -122,3 +122,48 @@ def test_retired_model_triggers_discovery(monkeypatch):
             "fastest": None, "recommended": None}
     assert ai_client.ask(plan) == ("hi there", True, None)
     assert calls == ["meta/llama-3.1-8b-instruct", "meta/llama-3.3-70b-instruct"]
+
+
+def test_tavily_runs_only_for_blocked_trips_and_is_optional(client, monkeypatch):
+    from accessroute import web_search
+    calls = []
+    monkeypatch.setattr(web_search, "search_alternatives",
+                        lambda plan: calls.append(plan["verdict"]) or [{"title": "t", "url": "https://mta.info", "snippet": "s"}])
+    blocked = {"start": station_id("34 St-Penn Station", "1"), "end": station_id("Times Sq-42 St", "7"),
+               "need": "elevator_only"}
+    r = client.post("/api/route", json=blocked).get_json()
+    assert r["plan"]["web_results"][0]["url"] == "https://mta.info" and calls == ["no_route"]
+    clear = {"start": station_id("Grand Central-42 St", "4"), "end": station_id("86 St", "4"),
+             "need": "elevator_only"}
+    r = client.post("/api/route", json=clear).get_json()
+    assert "web_results" not in r["plan"] and calls == ["no_route"]  # not called for clear trips
+
+
+def test_tavily_failure_returns_empty(monkeypatch):
+    from accessroute import web_search
+    monkeypatch.setenv("TAVILY_API_KEY", "k")
+    monkeypatch.setattr(web_search, "_cache", {})
+    monkeypatch.setattr(web_search.requests, "post",
+                        lambda *a, **k: (_ for _ in ()).throw(web_search.requests.Timeout()))
+    assert web_search.search_alternatives({"start": "a", "end": "b"}) == []
+    monkeypatch.delenv("TAVILY_API_KEY")
+    assert web_search.search_alternatives({"start": "a", "end": "b"}) == []
+
+
+def test_tavily_parses_results(monkeypatch):
+    from accessroute import web_search
+    monkeypatch.setenv("TAVILY_API_KEY", "k")
+    monkeypatch.setattr(web_search, "_cache", {})
+    seen = {}
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"results": [{"title": "Bus", "url": "https://mta.info/bus", "content": "x" * 500}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        seen.update(url=url, auth=headers["Authorization"], body=json)
+        return R()
+    monkeypatch.setattr(web_search.requests, "post", fake_post)
+    out = web_search.search_alternatives({"start": "A", "end": "B"})
+    assert out == [{"title": "Bus", "url": "https://mta.info/bus", "snippet": "x" * 300}]
+    assert seen["url"] == "https://api.tavily.com/search" and seen["auth"] == "Bearer k"

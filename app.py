@@ -16,7 +16,7 @@ from flask import Flask, jsonify, request
 logging.basicConfig(level=logging.INFO)
 load_dotenv()  # read NVIDIA_API_KEY etc. from .env before importing modules that use them
 
-from accessroute import ai_client, mta_feed, planner  # noqa: E402
+from accessroute import ai_client, mta_feed, planner, web_search  # noqa: E402
 from accessroute.subway_graph import ELEVATOR_ONLY, ELEVATOR_OR_ESCALATOR, SubwayGraph  # noqa: E402
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
@@ -52,6 +52,9 @@ def route():
         return jsonify(error="Couldn't reach the MTA outage feed. Please try again in a minute."), 502
 
     plan = planner.plan_trip(graph, start, end, need, outages, mta_feed.fetch_ada_station_names())
+    # Optional Tavily lookup, only when the fastest route isn't simply usable.
+    if plan["verdict"] in ("alternative", "no_route"):
+        plan["web_results"] = web_search.search_alternatives(plan)
     reply, ai_used, ai_error = ai_client.ask(plan)
     return jsonify(plan=plan, reply=reply, ai_used=ai_used, ai_error=ai_error,
                    total_outages=len(outages))

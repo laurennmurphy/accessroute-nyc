@@ -42,3 +42,4 @@ ol#legs, ul#checks { padding-left:0; list-style:none; }
 #checks li span { float:right; font-size:.85rem; }
 .outage { font-size:.9rem; color:var(--muted); }
 .muted { color:var(--muted); font-size:.9rem; }
+#web-links { padding-left:18px; } #web-links li { margin-bottom:8px; } #web-links a { color:var(--accent); }

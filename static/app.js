@@ -73,6 +73,13 @@ function renderResult(data) {
   if (shown) renderRoute(shown);
   else { $("legs").innerHTML = ""; $("checks").innerHTML = ""; }
 
+  // Optional Tavily links (only present for alternative / no_route verdicts).
+  const web = plan.web_results || [];
+  $("web").hidden = !web.length;
+  $("web-links").innerHTML = web.map((w) =>
+    `<li><a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">${esc(w.title || w.url)}</a>` +
+    `<div class="muted">${esc(w.snippet)}</div></li>`).join("");
+
   let note = ai_used ? "" : `AI assistant unavailable (${ai_error || "unknown error"}) — showing a standard summary. `;
   if (plan.unmatched_outages) note += `${plan.unmatched_outages} outage record(s) couldn’t be matched to a station. `;
   note += "Always double-check at mta.info/elevator before you travel.";
